@@ -1,0 +1,19 @@
+name: Build Ubuntu
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: apt-get
+      run: sudo apt-get install libfuse-dev libfuse3-dev
+
+    - name: compile fuse 2
+      g++ -std=c++14 -Wall main.cpp `pkg-config fuse --cflags --libs` -o ii-part-fuse-2
+
+    - name: compile fuse 3
+      g++ -std=c++14 -Wall main.cpp `pkg-config fuse3 --cflags --libs` -o ii-part-fuse-3
