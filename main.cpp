@@ -24,7 +24,7 @@
 #include <algorithm>
 
 
-#define FUSE_USE_VERSION 31
+#define FUSE_USE_VERSION 27
 #include <fuse.h>
 
 
