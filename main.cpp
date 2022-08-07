@@ -1,4 +1,4 @@
-// clang++ -std=c++14 -Wall main.cpp `pkg-config fuse --cflags --libs` -o focus
+// clang++ -std=c++14 -Wall main.cpp `pkg-config fuse --cflags --libs` -o ii-part-fuse
 
 /*
  * Thanks to: 
@@ -56,10 +56,12 @@ struct options
 	const char *filename;
 	const char *mountpoint;
 	bool verbose;
+	bool rw;
 } options;
 
 enum {
-	OPTION_HELP = 0
+	OPTION_HELP = 0,
+	OPTION_RW,
 };
 
 #define OPTION(t, p)                           \
@@ -67,6 +69,8 @@ enum {
 static const struct fuse_opt option_spec[] = {
 	FUSE_OPT_KEY("-h", OPTION_HELP),
 	FUSE_OPT_KEY("--help", OPTION_HELP),
+	FUSE_OPT_KEY("rw", OPTION_RW),
+
 	OPTION("-v", verbose),
 	OPTION("--verbose", verbose),
 	FUSE_OPT_END
@@ -79,6 +83,10 @@ static int part_opt_proc(void *data, const char *arg, int key, struct fuse_args 
 		case OPTION_HELP:
 			help(0);
 			break;
+
+		case OPTION_RW:
+			options.rw = true;
+			return 1; // save for fuse.
 
 		case FUSE_OPT_KEY_NONOPT:
 			if (!options.filename) {
@@ -319,7 +327,7 @@ static int setup(const char *path)
 {
 	unsigned char buffer[512 * 3];
 
-	fd = open(path, O_RDONLY);
+	fd = open(path, options.rw ? O_RDWR : O_RDONLY);
 	if (fd < 0) err(1, "Unable to open %s", path);
 
 
@@ -432,7 +440,7 @@ void help(int exitvalue)
 {
 	fputs(
 		"focus_mounter [-oro] [-v] filename-or-device [mountpoint]\n"
-		"    -oro                   read-only\n"
+		"    -orw                   read/write\n"
 		"    -v   --verbose         be verbose\n"
 		, stdout
 	);
