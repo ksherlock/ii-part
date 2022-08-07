@@ -2,32 +2,31 @@
 
 /*
  * Thanks to: 
- * - R. Belmont - MAME/a2zipdrive.cpp, a2vulcan.c
+ * - R. Belmont - https://github.com/mamedev/mame - a2zipdrive.cpp, a2vulcan.cpp
  * - Andy McFadden - https://github.com/fadden/ciderpress
  * - Bobbi Manners - https://github.com/bobbimanners/mdttool
  * - Jon Lasser - https://github.com/disappearinjon/microdrive
  */
 
 
-#include <unistd.h>
-#include <fcntl.h>
 #include <err.h>
-#include <sys/stat.h>
+#include <fcntl.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <sysexits.h>
+#include <unistd.h>
 
-#include <cerrno>
-#include <cstring>
-#include <cstdint>
-#include <vector>
-#include <string>
 #include <algorithm>
+#include <cerrno>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
 
 
 #define FUSE_USE_VERSION 27
 #include <fuse.h>
-
-
 
 #ifdef __APPLE__
 #include <sys/disk.h>
@@ -40,7 +39,6 @@
 #ifdef __sun__
 #include <sys/dkio.h>
 #endif
-
 
 #ifdef __FREEBSD__
 #include <sys/disk.h>
@@ -477,6 +475,9 @@ static struct fuse_operations focus_filesystem_operations = {
 
 std::string make_mount_dir()
 {
+	// Creating the mountpoint in /Volumes (as of 10.12) require root access.
+	// macfuse will create the directory for us if we find a suitable unused name.
+
 	std::string path = "/Volumes/Focus";
 	int length = path.length();
 
