@@ -13,5 +13,5 @@ jobs:
       run: brew install --cask macfuse
 
     - name: compile fuse
-      clang++ -std=c++14 -Wall main.cpp `pkg-config fuse --cflags --libs` -o ii-part-fuse
+      run: clang++ -std=c++14 -Wall main.cpp `pkg-config fuse --cflags --libs` -o ii-part-fuse
 

@@ -13,7 +13,7 @@ jobs:
       run: sudo apt-get install libfuse-dev libfuse3-dev
 
     - name: compile fuse 2
-      g++ -std=c++14 -Wall main.cpp `pkg-config fuse --cflags --libs` -o ii-part-fuse-2
+      run: g++ -std=c++14 -Wall main.cpp `pkg-config fuse --cflags --libs` -o ii-part-fuse-2
 
     - name: compile fuse 3
-      g++ -std=c++14 -Wall main.cpp `pkg-config fuse3 --cflags --libs` -o ii-part-fuse-3
+      run: g++ -std=c++14 -Wall main.cpp `pkg-config fuse3 --cflags --libs` -o ii-part-fuse-3
