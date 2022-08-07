@@ -14,6 +14,7 @@
 #include <err.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
+#include <sysexits.h>
 
 #include <cerrno>
 #include <cstring>
@@ -49,7 +50,21 @@
 #include <minix/partition.h>
 #endif
 
-void help(int);
+void help(int exitvalue)
+{
+	fputs(
+		"ii-part-fuse [-oro] [-v] filename-or-device [mountpoint]\n"
+		"    -orw                   read/write\n"
+		"    -oro -ordonly          read only (default)\n"
+		"    -v   --verbose         be verbose\n"
+		"    -f                     foreground\n"
+		"    -s                     single-threaded\n"
+		"    -d   -odebug           enable debug output (implies -f)\n"
+		, stdout
+	);
+	exit(exitvalue);
+}
+
 
 struct options
 {
@@ -64,24 +79,45 @@ enum {
 	OPTION_RW,
 };
 
-#define OPTION(t, p)                           \
+#define OPTION(t, p) \
     { t, offsetof(struct options, p), 1 }
 static const struct fuse_opt option_spec[] = {
-	FUSE_OPT_KEY("-h", OPTION_HELP),
-	FUSE_OPT_KEY("--help", OPTION_HELP),
-	FUSE_OPT_KEY("rw", OPTION_RW),
 
-	OPTION("-v", verbose),
-	OPTION("--verbose", verbose),
+#ifdef __APPLE__
+	// OSX Fuse / MacOS has a nasty bug where
+	// unknown options will hang the kernel.
+	// therefore, these known options are the only ones allowed.
+	FUSE_OPT_KEY("ro",           FUSE_OPT_KEY_KEEP),
+	FUSE_OPT_KEY("rdonly",       FUSE_OPT_KEY_KEEP),
+	FUSE_OPT_KEY("-f",           FUSE_OPT_KEY_KEEP),
+	FUSE_OPT_KEY("-s",           FUSE_OPT_KEY_KEEP),
+	FUSE_OPT_KEY("-d",           FUSE_OPT_KEY_KEEP),
+	FUSE_OPT_KEY("debug",        FUSE_OPT_KEY_KEEP),
+	FUSE_OPT_KEY("allow_other",  FUSE_OPT_KEY_KEEP),
+#endif
+
+	FUSE_OPT_KEY("-h",     OPTION_HELP),
+	FUSE_OPT_KEY("--help", OPTION_HELP),
+	FUSE_OPT_KEY("rw",     OPTION_RW),
+
+	OPTION("-v",           verbose),
+	OPTION("--verbose",    verbose),
 	FUSE_OPT_END
 };
 
 
 static int part_opt_proc(void *data, const char *arg, int key, struct fuse_args *outargs) {
 
+#ifdef __APPLE__
+	if (key == FUSE_OPT_KEY_OPT) {
+		warnx("unknown option '%s'", arg);
+		return -1;
+	}
+#endif
+
 	switch (key) {
 		case OPTION_HELP:
-			help(0);
+			help(EX_OK);
 			break;
 
 		case OPTION_RW:
@@ -97,6 +133,7 @@ static int part_opt_proc(void *data, const char *arg, int key, struct fuse_args 
 				options.mountpoint = arg;
 				return 1; // save for fuse.
 			}
+			return -1;
 			break;
 	}
 	return 1;
@@ -436,18 +473,6 @@ static struct fuse_operations focus_filesystem_operations = {
     .readdir = part_readdir,
 };
 
-void help(int exitvalue)
-{
-	fputs(
-		"focus_mounter [-oro] [-v] filename-or-device [mountpoint]\n"
-		"    -orw                   read/write\n"
-		"    -v   --verbose         be verbose\n"
-		, stdout
-	);
-	// fuse_cmdline_help();
-	exit(exitvalue);
-}
-
 #ifdef __APPLE__
 
 std::string make_mount_dir()
@@ -476,10 +501,11 @@ int main(int argc, char **argv)
 
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
-	if (fuse_opt_parse(&args, &options, option_spec, part_opt_proc) == -1)
-		return 1;
+	if (fuse_opt_parse(&args, &options, option_spec, part_opt_proc) < 0)
+		help(EX_USAGE);
 
-	if (!options.filename) help(1);
+
+	if (!options.filename) help(EX_USAGE);
 
 	if (setup(options.filename) < 0) return 1;
 
