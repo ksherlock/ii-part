@@ -66,10 +66,11 @@ void help(int exitvalue)
 
 struct options
 {
-	const char *filename;
-	const char *mountpoint;
-	bool verbose;
-	bool rw;
+	const char *filename = nullptr;
+	const char *mountpoint = nullptr;
+	// should be int, not bool, to work with OPTION()
+	int verbose = false;
+	int rw = false;
 } options;
 
 enum {
@@ -158,7 +159,7 @@ struct file_info
 // as there will be 16 or fewer partitions, a vector is fine.
 std::vector<file_info> files;
 int fd;
-
+off_t total_blocks;
 
 inline uint16_t read16(const unsigned char *data)
 {
@@ -267,6 +268,9 @@ off_t file_size(int fd)
 		if (::ioctl(fd, DKIOCGETBLOCKCOUNT, &blockCount) < 0)
 			err(1, "Unable to determine block count");
 
+		if (options.verbose)
+			printf("block count: %llu block size: %u\n", (unsigned long long)blockCount, (unsigned)blockSize);
+
 		return blockSize * blockCount;
 		#endif
 
@@ -362,11 +366,21 @@ static int setup(const char *path)
 {
 	unsigned char buffer[512 * 3];
 
+	if (options.verbose) warnx("Opening %s for %s", path, options.rw ? "read-write" : "read-only");
 	fd = open(path, options.rw ? O_RDWR : O_RDONLY);
 	if (fd < 0) err(1, "Unable to open %s", path);
 
 
 	if (read(fd, buffer, sizeof(buffer)) < sizeof(buffer)) err(1, "Unable to read %s", path);
+
+	off_t size = file_size(fd);
+	if (size == (off_t)-1)
+		errx(1, "Unable to determine file size\n");
+
+	if (size & 511)
+		errx(1, "Bad file size");
+
+	total_blocks = size / 512;
 
 	if (is_focus(buffer) || is_zip(buffer)) {
 		parse_focus(buffer);
@@ -392,6 +406,22 @@ static int part_open(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
+static int part_statfs(const char *path, struct statvfs *stbuf)
+{
+	memset(stbuf, 0, sizeof(*stbuf));
+
+	stbuf->f_bsize = 512;
+	stbuf->f_frsize = 512;
+	stbuf->f_bfree = 0;
+	stbuf->f_bavail = 0;
+	stbuf->f_blocks = total_blocks;
+	stbuf->f_files = files.size();
+	stbuf->f_flag = ST_NOSUID;
+	if (!options.rw) stbuf->f_flag |= ST_RDONLY;
+
+	return 0;
+}
+
 static int part_getattr(const char *path, struct stat *stbuf)
 {
 	const std::string spath(path + 1);
@@ -407,7 +437,7 @@ static int part_getattr(const char *path, struct stat *stbuf)
 
 	const file_info &f = *iter;
 
-	stbuf->st_mode = S_IFREG | 0444;
+	stbuf->st_mode = S_IFREG | 0666;
 	stbuf->st_nlink = 1;
 	stbuf->st_size = f.size;
 	return 0;
@@ -462,13 +492,22 @@ static int part_write(const char *path, const char *buf, size_t size, off_t offs
 	return ok;
 }
 
+static int part_fsync(const char *, int, struct fuse_file_info *)
+{
+	int ok = fsync(fd);
+	if (ok < 0) return -errno;
+	return 0;
+}
+
 
 static struct fuse_operations focus_filesystem_operations = {
+	.statfs  = part_statfs,
     .getattr = part_getattr,
     .open    = part_open,
     .read    = part_read,
     .write   = part_write,
     .readdir = part_readdir,
+    .fsync   = part_fsync,
 };
 
 #ifdef __APPLE__
@@ -516,6 +555,9 @@ int main(int argc, char **argv)
 		options.mountpoint = mp.c_str();
 		fuse_opt_add_arg(&args, mp.c_str());
 	}
+
+	fuse_opt_add_arg(&args, "-ovolname=Focus");
+
 	#else
 	if (!options.mountpoint) help(1);
 	#endif
