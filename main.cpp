@@ -48,21 +48,9 @@
 #include <minix/partition.h>
 #endif
 
-void help(int exitvalue)
-{
-	fputs(
-		"ii-part-fuse [-oro] [-v] filename-or-device [mountpoint]\n"
-		"    -orw                   read/write\n"
-		"    -oro -ordonly          read only (default)\n"
-		"    -v   --verbose         be verbose\n"
-		"    -f                     foreground\n"
-		"    -s                     single-threaded\n"
-		"    -d   -odebug           enable debug output (implies -f)\n"
-		, stdout
-	);
-	exit(exitvalue);
-}
 
+
+static struct fuse_operations part_operations;;
 
 struct options
 {
@@ -104,6 +92,20 @@ static const struct fuse_opt option_spec[] = {
 	FUSE_OPT_END
 };
 
+void help(int exitvalue)
+{
+	fputs(
+		"ii-part-fuse [-oro] [-v] filename-or-device [mountpoint]\n"
+		"    -orw                   read/write\n"
+		"    -oro -ordonly          read only (default)\n"
+		"    -v   --verbose         be verbose\n"
+		"    -f                     foreground\n"
+		"    -s                     single-threaded\n"
+		"    -d   -odebug           enable debug output (implies -f)\n"
+		, stdout
+	);
+	exit(exitvalue);
+}
 
 static int part_opt_proc(void *data, const char *arg, int key, struct fuse_args *outargs) {
 
@@ -362,41 +364,6 @@ static void parse_vulcan(const unsigned char *data)
 #endif
 
 
-static int setup(const char *path)
-{
-	unsigned char buffer[512 * 3];
-
-	if (options.verbose) warnx("Opening %s for %s", path, options.rw ? "read-write" : "read-only");
-	fd = open(path, options.rw ? O_RDWR : O_RDONLY);
-	if (fd < 0) err(1, "Unable to open %s", path);
-
-
-	if (read(fd, buffer, sizeof(buffer)) < sizeof(buffer)) err(1, "Unable to read %s", path);
-
-	off_t size = file_size(fd);
-	if (size == (off_t)-1)
-		errx(1, "Unable to determine file size\n");
-
-	if (size & 511)
-		errx(1, "Bad file size");
-
-	total_blocks = size / 512;
-
-	if (is_focus(buffer) || is_zip(buffer)) {
-		parse_focus(buffer);
-		return 0;
-	}
-
-	if (is_microdrive(buffer)) {
-		parse_microdrive(buffer);
-		return 0;
-	}
-
-	close(fd);
-	errx(1, "Unknown partition type.");
-}
-
-
 static int part_open(const char *path, struct fuse_file_info *fi)
 {
 	const std::string spath(path + 1);
@@ -500,16 +467,6 @@ static int part_fsync(const char *, int, struct fuse_file_info *)
 }
 
 
-static struct fuse_operations focus_filesystem_operations = {
-	.statfs  = part_statfs,
-    .getattr = part_getattr,
-    .open    = part_open,
-    .read    = part_read,
-    .write   = part_write,
-    .readdir = part_readdir,
-    .fsync   = part_fsync,
-};
-
 #ifdef __APPLE__
 
 std::string make_mount_dir()
@@ -534,6 +491,53 @@ std::string make_mount_dir()
 }
 
 #endif
+
+
+
+static int setup(const char *path)
+{
+	unsigned char buffer[512 * 3];
+
+	if (options.verbose) warnx("Opening %s for %s", path, options.rw ? "read-write" : "read-only");
+	fd = open(path, options.rw ? O_RDWR : O_RDONLY);
+	if (fd < 0) err(1, "Unable to open %s", path);
+
+
+	if (read(fd, buffer, sizeof(buffer)) < sizeof(buffer)) err(1, "Unable to read %s", path);
+
+	off_t size = file_size(fd);
+	if (size == (off_t)-1)
+		errx(1, "Unable to determine file size\n");
+
+	if (size & 511)
+		errx(1, "Bad file size");
+
+	total_blocks = size / 512;
+
+	if (is_focus(buffer) || is_zip(buffer)) {
+		parse_focus(buffer);
+		return 0;
+	}
+
+	if (is_microdrive(buffer)) {
+		parse_microdrive(buffer);
+		return 0;
+	}
+
+	close(fd);
+	errx(1, "Unknown partition type.");
+
+
+	part_operations.statfs  = part_statfs;
+	part_operations.getattr = part_getattr;
+	part_operations.open    = part_open;
+	part_operations.read    = part_read;
+	part_operations.write   = part_write;
+	part_operations.readdir = part_readdir;
+	part_operations.fsync   = part_fsync;
+}
+
+
 
 int main(int argc, char **argv)
 {
@@ -566,7 +570,7 @@ int main(int argc, char **argv)
 		printf ("Mounting %s to %s\n", options.filename, options.mountpoint);
 
 
-    ok = fuse_main(args.argc, args.argv, &focus_filesystem_operations, NULL);
+    ok = fuse_main(args.argc, args.argv, &part_operations, NULL);
 
 	fuse_opt_free_args(&args);
     close(fd);
